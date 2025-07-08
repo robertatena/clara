@@ -464,7 +464,7 @@ def show_welcome():
     
     st.markdown("""
     <div class="disclaimer">
-        <strong>⚠ Aviso importante:</strong>  # Remova o emoji ou use apenas o símbolo ⚠
+        <strong> Aviso importante:</strong>  # Remova o emoji ou use apenas o símbolo ⚠
         Nossa análise tem caráter informativo e não constitui assessoria jurídica. 
         Para questões complexas, recomendamos sempre consultar um profissional especializado.
     </div>
