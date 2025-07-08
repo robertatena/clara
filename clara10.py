@@ -1,3 +1,14 @@
+# Fix para Python 3.13+
+try:
+    import imghdr
+except ImportError:
+    from PIL import Image as imghdr  # Usa Pillow como substituto
+
+try:
+    import distutils
+except ImportError:
+    from setuptools import distutils  # Usa setuptools como substituto
+
 # IMPORTS CORRETOS (começo do arquivo)
 import streamlit as st
 import re
