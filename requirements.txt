@@ -4,3 +4,5 @@ PyPDF2>=3.0.0
 plotly>=5.15.0
 pandas>=2.0.0
 numpy>=2.0.0
+pillow>=10.0.0  # Inclui funcionalidades do imghdr
+distutils-py>=2.7.0  # Substitui o distutils removido
