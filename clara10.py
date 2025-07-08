@@ -1,10 +1,10 @@
+# IMPORTS CORRETOS (começo do arquivo)
 import streamlit as st
 import re
 from docx import Document
 import PyPDF2
 from io import BytesIO
 import plotly.express as px
-import time
 from typing import List, Dict, Optional, Union
 
 # ========== CONFIGURAÇÃO ==========
