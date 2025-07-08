@@ -461,8 +461,6 @@ def show_welcome():
     1. **Selecione seu perfil** (como você está no contrato)
     2. **Envie seu contrato** (PDF ou DOCX) ou cole o texto
     3. **Receba uma análise básica** dos pontos que merecem atenção
-    4. **Para uma análise detalhada**, solicite nosso relatório completo
-    """)
     
     st.markdown("""
     <div class="disclaimer">
