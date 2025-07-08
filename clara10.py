@@ -509,6 +509,33 @@ def show_welcome():
                 st.session_state.user_role = role['title']
                 st.session_state.show_analysis = True
                 st.rerun()
+                # ========== FUNÇÕES PRINCIPAIS ==========
+# [...] (outras funções existentes)
+
+def send_email_report(name, email, phone, analysis_results):
+    """Simula o envio de relatório por e-mail"""
+    st.success(f"📨 Relatório enviado para {email} com sucesso!")
+    
+    report = f"""Relatório de Análise Contratual - CLARA
+    ======================================
+    
+    Cliente: {name}
+    E-mail: {email}
+    Telefone: {phone}
+    
+    Resumo da Análise:"""
+    
+    for item in analysis_results:
+        report += f"\n\n- {item['clause']} (Pontuação: {item['score']}/10)"
+        report += f"\n  🔍 {item['explanation']}"
+        report += f"\n  ⚖️ Base legal: {item['law_reference']}"
+        report += f"\n  💡 Sugestão: {item['solution']}"
+    
+    st.text_area("Conteúdo do Relatório", report, height=300)
+
+def show_analysis_interface():
+    """Mostra a interface de análise do contrato"""
+    # [...] (código existente)
 
 def show_analysis_interface():
     """Mostra a interface de análise do contrato"""
