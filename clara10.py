@@ -617,7 +617,7 @@ def show_results(results: List[Dict]):
     
 st.markdown("""
 <div class="premium-offer">
-    <h3>📩 Quer receber uma análise detalhada por email?</h3>
+    <h3>\U0001F4E9 Quer receber uma análise detalhada por email?</h3>
     <p>Por apenas <strong>R$ 10,00</strong>, você recebe:</p>
     <ul>
         <li>Explicação detalhada de cada cláusula</li>
