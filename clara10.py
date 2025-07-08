@@ -6,6 +6,7 @@ import PyPDF2
 from io import BytesIO
 import plotly.express as px
 from typing import List, Dict, Optional, Union
+import time  # Para a função show_progress()
 
 # ========== CONFIGURAÇÃO ==========
 def setup_page_config():
