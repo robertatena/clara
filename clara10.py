@@ -617,20 +617,35 @@ def show_results(results: List[Dict]):
         )
         st.plotly_chart(fig, use_container_width=True)
     
-    st.markdown("""
-    <div class="premium-offer">
-        <h3>📩 Quer receber uma análise detalhada por email?</h3>
-        <p>Por apenas <strong>R$ 10,00</strong>, você recebe:</p>
-        <ul>
-            <li>Explicação detalhada de cada cláusula</li>
-            <li>Recomendações personalizadas para seu caso</li>
-            <li>Modelos de contestação prontos para usar</li>
-            <li>Orientações sobre próximos passos</li>
-        </ul>
-        <button class="btn-primary">Quero receber a análise completa</button>
-        <p style="font-size: 0.8rem; margin-top: 0.5rem;">Pagamento via PIX • Entrega em até 24h</p>
-    </div>
-    """, unsafe_allow_html=True)
+st.markdown("""
+<div class="premium-offer">
+    <h3>📩 Quer receber uma análise detalhada por email?</h3>
+    <p>Por apenas <strong>R$ 10,00</strong>, você recebe:</p>
+    <ul>
+        <li>Explicação detalhada de cada cláusula</li>
+        <li>Recomendações personalizadas para seu caso</li>
+        <li>Modelos de contestação prontos para usar</li>
+        <li>Orientações sobre próximos passos</li>
+    </ul>
+</div>
+""", unsafe_allow_html=True)
+
+# Botão que abre o formulário
+if st.button("🛒 Quero receber a análise completa", key="premium_report"):
+    with st.form(key='email_report_form'):
+        st.write("📝 **Preencha seus dados para receber o relatório:**")
+        name = st.text_input("Nome completo")
+        email = st.text_input("E-mail")
+        phone = st.text_input("Telefone (opcional)")
+        
+        submit_button = st.form_submit_button("📤 Enviar relatório")
+        
+        if submit_button:
+            if not name or not email:
+                st.error("❌ Por favor, preencha pelo menos nome e e-mail!")
+            else:
+                send_email_report(name, email, phone, results)
+    st.markdown("<p style='font-size: 0.8rem; margin-top: 0.5rem;'>Pagamento via PIX • Entrega em até 24h</p>", unsafe_allow_html=True)
     
     st.markdown("### 🔍 Pontos Analisados")
     for item in results:
