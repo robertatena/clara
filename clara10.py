@@ -18,15 +18,24 @@ from io import BytesIO
 import plotly.express as px
 from typing import List, Dict, Optional, Union
 import time
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+import subprocess
+import sys
 
-# Configuração do Google Sheets
-def setup_gsheets():
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
-    client = gspread.authorize(creds)
-    return client.open_by_url("https://docs.google.com/spreadsheets/d/10vw0ghFU9Gefk53f8WiIhgKAChdkdqtx9WvphwmiNrA/edit#gid=0")
+# Verifica e instala dependências necessárias
+def install(package):
+    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+try:
+    import gspread
+except ImportError:
+    install('gspread')
+    import gspread
+
+try:
+    from oauth2client.service_account import ServiceAccountCredentials
+except ImportError:
+    install('oauth2client')
+    from oauth2client.service_account import ServiceAccountCredentials
 
 # ========== CONFIGURAÇÃO ==========
 def setup_page_config():
@@ -423,6 +432,48 @@ def show_progress():
     progress_text.empty()
     progress_bar.empty()
 
+# ========== INTEGRAÇÃO COM GOOGLE SHEETS ==========
+def setup_gsheets():
+    """Configura a conexão com o Google Sheets"""
+    try:
+        scope = ["https://spreadsheets.google.com/feeds", 
+                "https://www.googleapis.com/auth/drive"]
+        
+        try:
+            creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+        except FileNotFoundError:
+            st.warning("Arquivo de credenciais não encontrado. Os dados não serão salvos.")
+            return None
+            
+        client = gspread.authorize(creds)
+        return client.open_by_url("https://docs.google.com/spreadsheets/d/10vw0ghFU9Gefk53f8WiIhgKAChdkdqtx9WvphwmiNrA/edit#gid=0")
+    except Exception as e:
+        st.error(f"Erro ao conectar com o Google Sheets: {str(e)}")
+        return None
+
+def save_to_google_sheets(name, email, phone, role, analysis_results):
+    """Salva os dados na planilha do Google"""
+    try:
+        sheet = setup_gsheets()
+        if sheet is None:
+            return False
+            
+        worksheet = sheet.sheet1
+        row = [
+            time.strftime("%Y-%m-%d %H:%M:%S"),
+            name,
+            email,
+            phone or "",
+            role,
+            str(len(analysis_results)),
+            str(sum(item.get("score", 0) for item in analysis_results))
+        ]
+        worksheet.append_row(row)
+        return True
+    except Exception as e:
+        st.error(f"Erro ao salvar na planilha: {str(e)}")
+        return False
+
 # ========== INTERFACES DE USUÁRIO ==========
 def show_welcome():
     """Mostra a página inicial com as opções de perfil"""
@@ -517,25 +568,6 @@ def show_welcome():
                 st.session_state.user_role = role['title']
                 st.session_state.show_analysis = True
                 st.rerun()
-
-def save_to_google_sheets(name, email, phone, role, analysis_results):
-    """Salva os dados na planilha do Google"""
-    try:
-        sheet = setup_gsheets().sheet1
-        row = [
-            time.strftime("%Y-%m-%d %H:%M:%S"),
-            name,
-            email,
-            phone or "",
-            role,
-            str(len(analysis_results)),
-            str(sum(item.get("score", 0) for item in analysis_results))
-        ]
-        sheet.append_row(row)
-        return True
-    except Exception as e:
-        st.error(f"Erro ao salvar na planilha: {str(e)}")
-        return False
 
 def send_email_report(name, email, phone, analysis_results, role):
     """Simula o envio de relatório por e-mail e salva na planilha"""
