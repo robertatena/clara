@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 CLARA - Análise Contratual Inteligente
-Versão 2.0 - Análise avançada de contratos com integração ao Google Sheets
+Versão 3.0 - Refatoração completa com tratamento robusto de erros
 """
 
 import sys
@@ -40,13 +40,14 @@ class DependencyManager:
         
         for module_name, package_name in cls.REQUIRED_PACKAGES:
             if not cls._is_installed(module_name):
+                logger.info(f"Pacote {package_name} não encontrado. Instalando...")
                 if not cls._install_package(package_name):
                     missing_packages.append(package_name)
         
         if missing_packages:
             error_msg = (
-                f"⚠️ Falha ao instalar dependências: {', '.join(missing_packages)}\n"
-                f"Por favor, instale manualmente com: pip install {' '.join(missing_packages)}"
+                f"Falha ao instalar dependências: {', '.join(missing_packages)}\n"
+                f"Execute manualmente: pip install {' '.join(missing_packages)}"
             )
             logger.error(error_msg)
             raise ImportError(error_msg)
@@ -71,6 +72,9 @@ class DependencyManager:
             )
             return True
         except subprocess.CalledProcessError:
+            return False
+        except Exception as e:
+            logger.error(f"Erro inesperado ao instalar {package_name}: {str(e)}")
             return False
 
 # Verifica dependências antes de continuar
@@ -116,73 +120,33 @@ class Config:
     # Configurações de análise
     MAX_EXCERPT_LENGTH = 100  # Caracteres antes/depois do termo encontrado
 
-# ========== UTILITÁRIOS ==========
-class TextUtils:
-    """Utilitários para processamento de texto"""
+# ========== MODELOS DE DADOS ==========
+class AnalysisResult:
+    """Modelo para resultados de análise"""
     
-    @staticmethod
-    def clean_text(text: str) -> str:
-        """Normaliza o texto para análise"""
-        if not text or not isinstance(text, str):
-            return ""
-        return text.lower().strip()
+    def __init__(self, clause: str, score: int, explanation: str, 
+                 solution: str, law_reference: str, excerpt: str):
+        self.clause = clause
+        self.score = score
+        self.explanation = explanation
+        self.solution = solution
+        self.law_reference = law_reference
+        self.excerpt = excerpt
     
-    @staticmethod
-    def extract_excerpt(text: str, pattern: str) -> str:
-        """
-        Extrai um trecho do texto com destaque para o padrão encontrado
-        
-        Args:
-            text: Texto completo do contrato
-            pattern: Padrão regex que foi encontrado
-            
-        Returns:
-            Trecho do texto com o padrão destacado
-        """
-        try:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                start = max(0, match.start() - Config.MAX_EXCERPT_LENGTH)
-                end = min(len(text), match.end() + Config.MAX_EXCERPT_LENGTH)
-                excerpt = text[start:end]
-                excerpt = ' '.join(excerpt.split())
-                highlighted = excerpt.replace(match.group().lower(), f"**{match.group()}**")
-                return f"...{highlighted}..."
-            return "Trecho não encontrado"
-        except Exception as e:
-            logger.error(f"Erro ao extrair trecho: {str(e)}")
-            return "Erro ao extrair trecho"
+    def to_dict(self) -> Dict:
+        """Converte para dicionário"""
+        return {
+            "clause": self.clause,
+            "score": self.score,
+            "explanation": self.explanation,
+            "solution": self.solution,
+            "law_reference": self.law_reference,
+            "excerpt": self.excerpt
+        }
 
-class FileUtils:
-    """Utilitários para manipulação de arquivos"""
-    
-    @staticmethod
-    def extract_text(file: st.runtime.uploaded_file_manager.UploadedFile) -> Optional[str]:
-        """
-        Extrai texto de arquivos PDF ou DOCX
-        
-        Args:
-            file: Arquivo enviado pelo usuário
-            
-        Returns:
-            Texto extraído ou None em caso de erro
-        """
-        try:
-            if file.type == "application/pdf":
-                pdf_reader = PyPDF2.PdfReader(file)
-                text = "\n".join([page.extract_text() or "" for page in pdf_reader.pages])
-                return text if text.strip() else None
-            elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-                doc = Document(BytesIO(file.read()))
-                text = "\n".join([para.text for para in doc.paragraphs if para.text])
-                return text if text.strip() else None
-        except Exception as e:
-            logger.error(f"Erro ao ler arquivo: {str(e)}")
-            return None
-
-# ========== GERENCIAMENTO DE REGRAS ==========
-class ContractRules:
-    """Gerencia as regras de análise de contrato"""
+# ========== SERVIÇOS ==========
+class ContractAnalyzer:
+    """Serviço de análise de contratos"""
     
     RULES = {
         "Consumidor": [
@@ -199,94 +163,111 @@ class ContractRules:
     }
     
     @classmethod
-    def get_rules_for_role(cls, role: str) -> List[Dict]:
-        """Retorna as regras específicas para um perfil"""
-        return cls.RULES.get(role, [])
-
-# ========== ANÁLISE DE CONTRATO ==========
-class ContractAnalyzer:
-    """Realiza a análise de contratos"""
-    
-    @staticmethod
-    def analyze(text: str, role: str) -> List[Dict]:
-        """
-        Analisa o texto do contrato com base nas regras para o perfil especificado
-        
-        Args:
-            text: Texto do contrato a ser analisado
-            role: Perfil do usuário
-            
-        Returns:
-            Lista de resultados da análise
-        """
+    def analyze(cls, text: str, role: str) -> List[AnalysisResult]:
+        """Analisa o texto do contrato"""
         if not text or not isinstance(text, str):
-            return [ContractAnalyzer._create_error_result("Texto do contrato inválido ou vazio.")]
+            return [cls._create_error_result("Texto do contrato inválido ou vazio.")]
         
         try:
-            text = TextUtils.clean_text(text)
+            text = text.lower()
             results = []
-            rules = ContractRules.get_rules_for_role(role)
+            rules = cls.RULES.get(role, [])
             
             for rule in rules:
                 for pattern in rule["patterns"]:
                     try:
                         if re.search(pattern, text, re.IGNORECASE):
-                            excerpt = TextUtils.extract_excerpt(text, pattern)
-                            results.append(ContractAnalyzer._create_analysis_result(rule, excerpt))
+                            excerpt = cls._extract_excerpt(text, pattern)
+                            results.append(AnalysisResult(
+                                clause=rule["name"],
+                                score=rule["score"],
+                                explanation=rule["explanation"],
+                                solution=rule["solution"],
+                                law_reference=rule["law_reference"],
+                                excerpt=excerpt
+                            ))
                             break
                     except re.error as e:
                         logger.warning(f"Padrão regex inválido: {pattern} - {str(e)}")
                         continue
             
-            return sorted(results, key=lambda x: x["score"], reverse=True) if results else \
-                   [ContractAnalyzer._create_no_issues_result()]
+            return sorted(results, key=lambda x: x.score, reverse=True) if results else \
+                   [cls._create_no_issues_result()]
             
         except Exception as e:
             logger.error(f"Erro durante análise: {str(e)}")
-            return [ContractAnalyzer._create_error_result(f"Ocorreu um erro durante a análise: {str(e)}")]
+            return [cls._create_error_result(f"Ocorreu um erro durante a análise: {str(e)}")]
 
     @staticmethod
-    def _create_error_result(error_msg: str) -> Dict:
-        """Cria um resultado de erro padronizado"""
-        return {
-            "clause": "Erro na análise",
-            "score": 0,
-            "explanation": error_msg,
-            "solution": "Por favor, tente novamente ou entre em contato com o suporte.",
-            "law_reference": "",
-            "excerpt": ""
-        }
+    def _extract_excerpt(text: str, pattern: str) -> str:
+        """Extrai um trecho do texto com destaque para o padrão"""
+        try:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                start = max(0, match.start() - Config.MAX_EXCERPT_LENGTH)
+                end = min(len(text), match.end() + Config.MAX_EXCERPT_LENGTH)
+                excerpt = text[start:end]
+                excerpt = ' '.join(excerpt.split())
+                highlighted = excerpt.replace(match.group().lower(), f"**{match.group()}**")
+                return f"...{highlighted}..."
+            return "Trecho não encontrado"
+        except Exception as e:
+            logger.error(f"Erro ao extrair trecho: {str(e)}")
+            return "Erro ao extrair trecho"
 
     @staticmethod
-    def _create_no_issues_result() -> Dict:
-        """Cria um resultado padrão quando não há problemas identificados"""
-        return {
-            "clause": "Nenhum ponto crítico identificado",
-            "score": 0,
-            "explanation": "Não encontramos cláusulas que normalmente exigem atenção especial para seu perfil.",
-            "solution": "Ainda assim, recomendamos revisão cuidadosa ou consulta a um especialista para verificação completa.",
-            "law_reference": "",
-            "excerpt": ""
-        }
+    def _create_error_result(error_msg: str) -> AnalysisResult:
+        """Cria um resultado de erro"""
+        return AnalysisResult(
+            clause="Erro na análise",
+            score=0,
+            explanation=error_msg,
+            solution="Por favor, tente novamente ou entre em contato com o suporte.",
+            law_reference="",
+            excerpt=""
+        )
 
     @staticmethod
-    def _create_analysis_result(rule: Dict, excerpt: str) -> Dict:
-        """Cria um resultado de análise padronizado a partir de uma regra"""
-        return {
-            "clause": rule["name"],
-            "score": rule["score"],
-            "explanation": rule["explanation"],
-            "solution": rule["solution"],
-            "law_reference": rule["law_reference"],
-            "excerpt": excerpt if excerpt else "Trecho não encontrado"
-        }
+    def _create_no_issues_result() -> AnalysisResult:
+        """Cria um resultado sem problemas encontrados"""
+        return AnalysisResult(
+            clause="Nenhum ponto crítico identificado",
+            score=0,
+            explanation="Não encontramos cláusulas que normalmente exigem atenção especial para seu perfil.",
+            solution="Ainda assim, recomendamos revisão cuidadosa ou consulta a um especialista.",
+            law_reference="",
+            excerpt=""
+        )
 
-# ========== INTEGRAÇÃO COM GOOGLE SHEETS ==========
-class GoogleSheetsManager:
-    """Gerencia a integração com o Google Sheets"""
+class GoogleSheetsService:
+    """Serviço de integração com Google Sheets"""
     
     @classmethod
-    def connect(cls):
+    def save_analysis(cls, name: str, email: str, phone: str, role: str, results: List[AnalysisResult]) -> bool:
+        """Salva os dados da análise na planilha"""
+        try:
+            sheet = cls._connect()
+            if not sheet:
+                return False
+                
+            worksheet = sheet.sheet1
+            row = [
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                name,
+                email,
+                phone or "",
+                role,
+                str(len(results)),
+                str(sum(result.score for result in results))
+            ]
+            worksheet.append_row(row)
+            return True
+        except Exception as e:
+            logger.error(f"Erro ao salvar dados: {str(e)}")
+            return False
+
+    @staticmethod
+    def _connect():
         """Estabelece conexão com o Google Sheets"""
         try:
             scope = ["https://spreadsheets.google.com/feeds", 
@@ -304,36 +285,12 @@ class GoogleSheetsManager:
             logger.error(f"Erro ao conectar com Google Sheets: {str(e)}")
             return None
 
-    @classmethod
-    def save_data(cls, name: str, email: str, phone: str, role: str, analysis_results: List[Dict]) -> bool:
-        """Salva os dados na planilha"""
-        try:
-            sheet = cls.connect()
-            if not sheet:
-                return False
-                
-            worksheet = sheet.sheet1
-            row = [
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                name,
-                email,
-                phone or "",
-                role,
-                str(len(analysis_results)),
-                str(sum(item.get("score", 0) for item in analysis_results))
-            ]
-            worksheet.append_row(row)
-            return True
-        except Exception as e:
-            logger.error(f"Erro ao salvar dados: {str(e)}")
-            return False
-
 # ========== INTERFACE DO USUÁRIO ==========
-class UIManager:
-    """Gerencia a interface do usuário"""
+class UIComponents:
+    """Componentes da interface do usuário"""
     
     @staticmethod
-    def setup_page():
+    def setup_page_config():
         """Configurações iniciais da página"""
         st.set_page_config(
             page_title="CLARA - Análise Contratual Inteligente",
@@ -375,10 +332,10 @@ class UIManager:
             /* ... (outros estilos permanecem iguais) ... */
         </style>
         """, unsafe_allow_html=True)
-    
+
     @staticmethod
     def show_progress():
-        """Mostra uma barra de progresso durante a análise"""
+        """Mostra barra de progresso durante análise"""
         progress_bar = st.empty()
         progress_text = st.empty()
         
@@ -389,44 +346,33 @@ class UIManager:
         
         progress_text.empty()
         progress_bar.empty()
-    
+
     @staticmethod
     def show_welcome():
-        """Mostra a página inicial com as opções de perfil"""
+        """Página inicial com opções de perfil"""
         st.markdown("""
         <div class="hero">
             <div class="hero-title">CLARA</div>
             <div class="hero-subtitle">Seu Assistente para Análise de Contratos</div>
             <p style="font-size: 1.1rem; color: #4b5563; max-width: 800px; margin: 0 auto;">
             A CLARA ajuda você a entender contratos complexos em linguagem simples, 
-            identificando pontos que merecem sua atenção. Não somos um escritório de advocacia, 
-            mas seu guia para entender melhor seus contratos.
+            identificando pontos que merecem sua atenção.
             </p>
         </div>
         """, unsafe_allow_html=True)
         
-        # ... (restante da implementação da UI permanece similar, mas organizado em métodos)
-    
-    @staticmethod
-    def show_analysis_interface():
-        """Mostra a interface de análise do contrato"""
-        # ... (implementação organizada da interface de análise)
-    
-    @staticmethod
-    def show_results(results: List[Dict]):
-        """Mostra os resultados da análise"""
-        # ... (implementação organizada da exibição de resultados)
+        # ... (implementação dos outros componentes da UI)
 
 # ========== APLICAÇÃO PRINCIPAL ==========
 class ClaraApp:
-    """Classe principal da aplicação"""
+    """Aplicação principal"""
     
     def __init__(self):
-        self._initialize_session_state()
-        UIManager.setup_page()
-        UIManager.load_css()
+        self._init_session_state()
+        UIComponents.setup_page_config()
+        UIComponents.load_css()
     
-    def _initialize_session_state(self):
+    def _init_session_state(self):
         """Inicializa o estado da sessão"""
         if "show_analysis" not in st.session_state:
             st.session_state.show_analysis = False
@@ -436,12 +382,209 @@ class ClaraApp:
             st.session_state.analysis_results = None
     
     def run(self):
-        """Executa a aplicação"""
+        """Executa o fluxo principal da aplicação"""
         if not st.session_state.show_analysis:
-            UIManager.show_welcome()
+            self._show_welcome_page()
         else:
-            UIManager.show_analysis_interface()
+            self._show_analysis_interface()
+    
+    def _show_welcome_page(self):
+        """Exibe a página inicial"""
+        UIComponents.show_welcome()
+        
+        roles = [
+            {"title": "Consumidor", "icon": "🛒"},
+            {"title": "Prestador de Serviços", "icon": "👨‍💻"},
+            {"title": "Locatário", "icon": "🏠"},
+            {"title": "Empresário", "icon": "👔"}
+        ]
+        
+        cols = st.columns(2)
+        for i, role in enumerate(roles):
+            with cols[i % 2]:
+                if st.button(
+                    f"{role['icon']} {role['title']}",
+                    key=f"role_{i}",
+                    use_container_width=True
+                ):
+                    st.session_state.user_role = role['title']
+                    st.session_state.show_analysis = True
+                    st.rerun()
+    
+    def _show_analysis_interface(self):
+        """Exibe a interface de análise"""
+        st.markdown(f"""
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <h1>Análise Contratual</h1>
+            <p style="color: #4b5563;">Perfil: {st.session_state.get('user_role', 'Não definido')}</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        text = self._get_contract_text()
+        
+        if st.button("🔍 Analisar Contrato", type="primary", use_container_width=True):
+            if not text:
+                st.error("Por favor, envie um arquivo ou cole o texto do contrato")
+                return
+            
+            with st.spinner("Preparando análise..."):
+                try:
+                    UIComponents.show_progress()
+                    results = ContractAnalyzer.analyze(text, st.session_state.user_role)
+                    st.session_state.analysis_results = results
+                    st.success("Análise concluída!")
+                except Exception as e:
+                    st.error(f"Erro durante a análise: {str(e)}")
+                    st.session_state.analysis_results = [
+                        ContractAnalyzer._create_error_result(f"Erro no processamento: {str(e)}")
+                    ]
+        
+        if st.session_state.analysis_results:
+            self._show_results(st.session_state.analysis_results)
+    
+    def _get_contract_text(self) -> Optional[str]:
+        """Obtém o texto do contrato do usuário"""
+        tab1, tab2 = st.tabs(["Upload de Arquivo", "Texto Digitado"])
+        
+        with tab1:
+            file = st.file_uploader(
+                "Selecione um arquivo (PDF ou DOCX)",
+                type=["pdf", "docx"],
+                label_visibility="collapsed"
+            )
+            if file:
+                try:
+                    if file.type == "application/pdf":
+                        pdf_reader = PyPDF2.PdfReader(file)
+                        return "\n".join([page.extract_text() or "" for page in pdf_reader.pages])
+                    elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                        doc = Document(BytesIO(file.read()))
+                        return "\n".join([para.text for para in doc.paragraphs if para.text])
+                except Exception as e:
+                    st.error(f"Erro ao ler arquivo: {str(e)}")
+                    return None
+        
+        with tab2:
+            return st.text_area(
+                "Ou cole o texto do contrato aqui",
+                height=200,
+                placeholder="Copie e cole o texto completo do contrato..."
+            )
+        
+        return None
+    
+    def _show_results(self, results: List[AnalysisResult]):
+        """Exibe os resultados da análise"""
+        st.markdown("### 📋 Resultados da Análise")
+        
+        # Métricas resumidas
+        needs_review = sum(1 for r in results if r.score >= 7)
+        suggested_review = sum(1 for r in results if 4 <= r.score < 7)
+        no_issues = sum(1 for r in results if r.score < 4)
+        
+        cols = st.columns(3)
+        cols[0].metric("Precisa revisar", needs_review)
+        cols[1].metric("Sugerimos revisar", suggested_review)
+        cols[2].metric("Sem problemas", no_issues)
+        
+        # Gráfico de pizza
+        if needs_review + suggested_review + no_issues > 0:
+            fig = px.pie(
+                names=["Precisa revisar", "Sugerimos revisar", "Sem problemas"],
+                values=[needs_review, suggested_review, no_issues],
+                color_discrete_map={
+                    "Precisa revisar": Config.COLORS['warning'],
+                    "Sugerimos revisar": "#a3a3a3",
+                    "Sem problemas": Config.COLORS['success']
+                },
+                hole=0.4
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # Opção de relatório por e-mail
+        self._show_email_report_option(results)
+        
+        # Detalhes da análise
+        st.markdown("### 🔍 Pontos Analisados")
+        for result in results:
+            self._show_result_detail(result)
+    
+    def _show_email_report_option(self, results: List[AnalysisResult]):
+        """Exibe opção para solicitar relatório por e-mail"""
+        st.markdown("""
+        <div class="premium-offer">
+            <h3>📩 Relatório Completo por E-mail</h3>
+            <p>Receba um relatório detalhado com:</p>
+            <ul>
+                <li>Análise completa de cada cláusula</li>
+                <li>Recomendações personalizadas</li>
+                <li>Modelos de contestação</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
 
+        if st.button("📧 Solicitar Relatório", key="premium_report"):
+            with st.form(key='email_form'):
+                name = st.text_input("Nome completo")
+                email = st.text_input("E-mail")
+                phone = st.text_input("Telefone (opcional)")
+                
+                if st.form_submit_button("Enviar Solicitação"):
+                    if not name or not email:
+                        st.error("Por favor, preencha pelo menos nome e e-mail")
+                    else:
+                        if GoogleSheetsService.save_analysis(
+                            name, email, phone, 
+                            st.session_state.user_role, results
+                        ):
+                            st.success("Relatório solicitado com sucesso!")
+                            self._show_email_content(name, email, results)
+    
+    def _show_email_content(self, name: str, email: str, results: List[AnalysisResult]):
+        """Mostra o conteúdo do e-mail que seria enviado"""
+        report = f"""Relatório de Análise Contratual - CLARA
+======================================
+
+Cliente: {name}
+E-mail: {email}
+Perfil: {st.session_state.user_role}
+
+Resumo da Análise:"""
+        
+        for item in results:
+            report += f"\n\n- {item.clause} (Pontuação: {item.score}/10)"
+            report += f"\n  🔍 {item.explanation}"
+            report += f"\n  ⚖️ Base legal: {item.law_reference}"
+            report += f"\n  💡 Sugestão: {item.solution}"
+        
+        st.text_area("Conteúdo do Relatório", report, height=300)
+    
+    def _show_result_detail(self, result: AnalysisResult):
+        """Exibe os detalhes de um resultado individual"""
+        risk_class = (
+            "attention-needed" if result.score >= 7 else 
+            "review-suggested" if result.score >= 4 else 
+            "no-issues"
+        )
+        
+        with st.expander(f"{result.clause}", expanded=True):
+            st.markdown(f"""
+            <div class="feature-card {risk_class}">
+                <p><strong>📌 No contrato:</strong></p>
+                <div class="contract-excerpt">
+                    {result.excerpt}
+                </div>
+                <p><strong>💡 O que significa:</strong> {result.explanation}</p>
+                <p><strong>⚖️ Base legal:</strong> {result.law_reference}</p>
+                <p><strong>🛠️ Sugestão:</strong> {result.solution}</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+# Ponto de entrada da aplicação
 if __name__ == "__main__":
-    app = ClaraApp()
-    app.run()
+    try:
+        app = ClaraApp()
+        app.run()
+    except Exception as e:
+        logger.critical(f"Falha crítica na aplicação: {str(e)}")
+        st.error("Ocorreu um erro crítico na aplicação. Por favor, tente novamente mais tarde.")
