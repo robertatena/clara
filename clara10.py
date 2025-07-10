@@ -17,7 +17,16 @@ import PyPDF2
 from io import BytesIO
 import plotly.express as px
 from typing import List, Dict, Optional, Union
-import time  # Para a função show_progress()
+import time
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+# Configuração do Google Sheets
+def setup_gsheets():
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+    client = gspread.authorize(creds)
+    return client.open_by_url("https://docs.google.com/spreadsheets/d/10vw0ghFU9Gefk53f8WiIhgKAChdkdqtx9WvphwmiNrA/edit#gid=0")
 
 # ========== CONFIGURAÇÃO ==========
 def setup_page_config():
@@ -461,10 +470,11 @@ def show_welcome():
     1. **Selecione seu perfil** (como você está no contrato)
     2. **Envie seu contrato** (PDF ou DOCX) ou cole o texto
     3. **Receba uma análise básica** dos pontos que merecem atenção
+    """)
     
     st.markdown("""
     <div class="disclaimer">
-        <strong> Aviso importante:</strong>  # Remova o emoji ou use apenas o símbolo ⚠
+        <strong>⚠ Aviso importante:</strong>
         Nossa análise tem caráter informativo e não constitui assessoria jurídica. 
         Para questões complexas, recomendamos sempre consultar um profissional especializado.
     </div>
@@ -507,33 +517,54 @@ def show_welcome():
                 st.session_state.user_role = role['title']
                 st.session_state.show_analysis = True
                 st.rerun()
-                # ========== FUNÇÕES PRINCIPAIS ==========
-# [...] (outras funções existentes)
 
-def send_email_report(name, email, phone, analysis_results):
-    """Simula o envio de relatório por e-mail"""
-    st.success(f"📨 Relatório enviado para {email} com sucesso!")
-    
-    report = f"""Relatório de Análise Contratual - CLARA
-    ======================================
-    
-    Cliente: {name}
-    E-mail: {email}
-    Telefone: {phone}
-    
-    Resumo da Análise:"""
-    
-    for item in analysis_results:
-        report += f"\n\n- {item['clause']} (Pontuação: {item['score']}/10)"
-        report += f"\n  🔍 {item['explanation']}"
-        report += f"\n  ⚖️ Base legal: {item['law_reference']}"
-        report += f"\n  💡 Sugestão: {item['solution']}"
-    
-    st.text_area("Conteúdo do Relatório", report, height=300)
+def save_to_google_sheets(name, email, phone, role, analysis_results):
+    """Salva os dados na planilha do Google"""
+    try:
+        sheet = setup_gsheets().sheet1
+        row = [
+            time.strftime("%Y-%m-%d %H:%M:%S"),
+            name,
+            email,
+            phone or "",
+            role,
+            str(len(analysis_results)),
+            str(sum(item.get("score", 0) for item in analysis_results))
+        ]
+        sheet.append_row(row)
+        return True
+    except Exception as e:
+        st.error(f"Erro ao salvar na planilha: {str(e)}")
+        return False
 
-def show_analysis_interface():
-    """Mostra a interface de análise do contrato"""
-    # [...] (código existente)
+def send_email_report(name, email, phone, analysis_results, role):
+    """Simula o envio de relatório por e-mail e salva na planilha"""
+    if not name or not email:
+        st.error("❌ Por favor, preencha pelo menos nome e e-mail!")
+        return False
+    
+    if save_to_google_sheets(name, email, phone, role, analysis_results):
+        st.success(f"📨 Relatório enviado para {email} com sucesso!")
+        
+        report = f"""Relatório de Análise Contratual - CLARA
+======================================
+        
+Cliente: {name}
+E-mail: {email}
+Telefone: {phone or 'Não informado'}
+Perfil: {role}
+        
+Resumo da Análise:"""
+        
+        for item in analysis_results:
+            report += f"\n\n- {item['clause']} (Pontuação: {item['score']}/10)"
+            report += f"\n  🔍 {item['explanation']}"
+            report += f"\n  ⚖️ Base legal: {item['law_reference']}"
+            report += f"\n  💡 Sugestão: {item['solution']}"
+        
+        st.text_area("Conteúdo do Relatório", report, height=300)
+        return True
+    return False
 
 def show_analysis_interface():
     """Mostra a interface de análise do contrato"""
@@ -615,35 +646,39 @@ def show_results(results: List[Dict]):
         )
         st.plotly_chart(fig, use_container_width=True)
     
-st.markdown("""
-<div class="premium-offer">
-    <h3>\U0001F4E9 Quer receber uma análise detalhada por email?</h3>
-    <p>Por apenas <strong>R$ 10,00</strong>, você recebe:</p>
-    <ul>
-        <li>Explicação detalhada de cada cláusula</li>
-        <li>Recomendações personalizadas para seu caso</li>
-        <li>Modelos de contestação prontos para usar</li>
-        <li>Orientações sobre próximos passos</li>
-    </ul>
-</div>
-""", unsafe_allow_html=True)
+    st.markdown("""
+    <div class="premium-offer">
+        <h3>📩 Quer receber uma análise detalhada por email?</h3>
+        <p>Por apenas <strong>R$ 10,00</strong>, você recebe:</p>
+        <ul>
+            <li>Explicação detalhada de cada cláusula</li>
+            <li>Recomendações personalizadas para seu caso</li>
+            <li>Modelos de contestação prontos para usar</li>
+            <li>Orientações sobre próximos passos</li>
+        </ul>
+    </div>
+    """, unsafe_allow_html=True)
 
-# Botão que abre o formulário
-if st.button("🛒 Quero receber a análise completa", key="premium_report"):
-    with st.form(key='email_report_form'):
-        st.write("📝 **Preencha seus dados para receber o relatório:**")
-        name = st.text_input("Nome completo")
-        email = st.text_input("E-mail")
-        phone = st.text_input("Telefone (opcional)")
+    # Botão que abre o formulário
+    if st.button("🛒 Quero receber a análise completa", key="premium_report"):
+        with st.form(key='email_report_form'):
+            st.write("📝 **Preencha seus dados para receber o relatório:**")
+            name = st.text_input("Nome completo", key="report_name")
+            email = st.text_input("E-mail", key="report_email")
+            phone = st.text_input("Telefone (opcional)", key="report_phone")
+            
+            submit_button = st.form_submit_button("📤 Enviar relatório")
+            
+            if submit_button:
+                send_email_report(
+                    name, 
+                    email, 
+                    phone, 
+                    results,
+                    st.session_state.get('user_role', '')
+                )
         
-        submit_button = st.form_submit_button("📤 Enviar relatório")
-        
-        if submit_button:
-            if not name or not email:
-                st.error("❌ Por favor, preencha pelo menos nome e e-mail!")
-            else:
-                send_email_report(name, email, phone, results)
-    st.markdown("<p style='font-size: 0.8rem; margin-top: 0.5rem;'>Pagamento via PIX • Entrega em até 24h</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.8rem; margin-top: 0.5rem;'>Pagamento via PIX • Entrega em até 24h</p>", unsafe_allow_html=True)
     
     st.markdown("### 🔍 Pontos Analisados")
     for item in results:
