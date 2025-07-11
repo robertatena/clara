@@ -9,3 +9,4 @@ pyasn1>=0.6.1,<0.7.0
 oauthlib>=3.0.0
 streamlit>=1.0.0
 python-docx>=0.8.11
+PyPDF2>=3.0.0
