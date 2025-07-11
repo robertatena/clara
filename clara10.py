@@ -6,6 +6,7 @@ from io import BytesIO
 import plotly.express as px
 import time
 from typing import List, Dict, Optional, Union
+from datetime import datetime
 
 # ========== CONFIGURAÇÃO ==========
 def setup_page_config():
@@ -158,22 +159,53 @@ def load_css():
                 font-size: 1.8rem;
             }
         }
+        
+        /* Novo estilo para formulário */
+        .user-form {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            margin: 2rem 0;
+            border: 1px solid var(--border);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .form-title {
+            color: var(--secondary);
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+        
+        .required-field::after {
+            content: " *";
+            color: var(--danger);
+        }
     </style>
     """, unsafe_allow_html=True)
 
 def check_dependencies():
-    """Verifica se todas as dependências estão instaladas."""
-    try:
-        import docx
-        import PyPDF2
-        import plotly
-        import gspread
-        import google.auth
-        return True
-    except ImportError as e:
-        st.error(f"Falha ao importar dependências necessárias: {str(e)}")
-        st.info("Instale os pacotes com: pip install -r requirements.txt")
+    """Verifica se todas as dependências estão instaladas"""
+    required_packages = {
+        'docx': 'python-docx',
+        'PyPDF2': 'PyPDF2',
+        'plotly': 'plotly',
+        'gspread': 'gspread',
+        'google.auth': 'google-auth'
+    }
+    
+    missing = []
+    for package, pip_name in required_packages.items():
+        try:
+            __import__(package)
+        except ImportError:
+            missing.append(pip_name)
+    
+    if missing:
+        st.error("Pacotes necessários não encontrados!")
+        st.info(f"Instale com: pip install {' '.join(missing)}")
         return False
+    return True
 
 # ========== REGRAS DE ANÁLISE ==========
 def get_contract_rules() -> Dict[str, List[Dict]]:
@@ -416,7 +448,91 @@ def show_progress():
     progress_text.empty()
     progress_bar.empty()
 
+# ========== GERENCIAMENTO DE DADOS ==========
+def save_to_google_sheets(data: dict) -> bool:
+    """Salva os dados do usuário no Google Sheets"""
+    try:
+        import gspread
+        from google.oauth2.service_account import Credentials
+        
+        # Configuração das credenciais
+        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+        creds = Credentials.from_service_account_info(st.secrets["google_credentials"], scopes=scopes)
+        client = gspread.authorize(creds)
+        
+        # Abre a planilha
+        sheet = client.open_by_key(st.secrets["spreadsheet_key"]).sheet1
+        
+        # Adiciona nova linha com os dados
+        sheet.append_row([
+            data.get('nome', ''),
+            data.get('email', ''),
+            data.get('telefone', ''),
+            data.get('perfil', ''),
+            str(datetime.now()),
+            data.get('tipo_contrato', ''),
+            data.get('observacoes', '')
+        ])
+        
+        return True
+    except Exception as e:
+        st.error(f"Erro ao salvar dados: {str(e)}")
+        return False
+
 # ========== INTERFACES DE USUÁRIO ==========
+def show_user_info_form() -> bool:
+    """Mostra o formulário de informações do usuário"""
+    with st.container():
+        st.markdown("""
+        <div class="user-form">
+            <div class="form-title">📝 Informações para Análise</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        with st.form("user_info_form", clear_on_submit=True):
+            cols = st.columns(2)
+            with cols[0]:
+                nome = st.text_input("Nome completo*", key="user_name")
+            with cols[1]:
+                email = st.text_input("E-mail*", key="user_email")
+            
+            telefone = st.text_input("Telefone (opcional)", key="user_phone")
+            tipo_contrato = st.text_input("Tipo de contrato (opcional)", key="contract_type")
+            observacoes = st.text_area("Observações adicionais (opcional)", key="user_notes")
+            
+            submitted = st.form_submit_button("Enviar e Continuar")
+            
+            if submitted:
+                if not nome or not email:
+                    st.error("Por favor, preencha pelo menos nome e e-mail")
+                    return False
+                
+                if "@" not in email or "." not in email:
+                    st.error("Por favor, insira um e-mail válido")
+                    return False
+                
+                user_data = {
+                    "nome": nome,
+                    "email": email,
+                    "telefone": telefone,
+                    "perfil": st.session_state.user_role,
+                    "tipo_contrato": tipo_contrato,
+                    "observacoes": observacoes
+                }
+                
+                if save_to_google_sheets(user_data):
+                    st.session_state.user_info = user_data
+                    st.session_state.show_user_form = False
+                    st.success("Informações salvas com sucesso!")
+                    time.sleep(1)
+                    return True
+                else:
+                    st.warning("As informações não puderam ser salvas automaticamente. Por favor, continue com a análise.")
+                    st.session_state.user_info = user_data
+                    st.session_state.show_user_form = False
+                    return True
+    return False
+
 def show_welcome():
     """Mostra a página inicial com as opções de perfil"""
     st.markdown("""
@@ -461,9 +577,10 @@ def show_welcome():
     st.markdown("### 🔍 Como funciona?")
     st.markdown("""
     1. **Selecione seu perfil** (como você está no contrato)
-    2. **Envie seu contrato** (PDF ou DOCX) ou cole o texto
-    3. **Receba uma análise básica** dos pontos que merecem atenção
-    4. **Para uma análise detalhada**, solicite nosso relatório completo
+    2. **Forneça suas informações** para personalizarmos a análise
+    3. **Envie seu contrato** (PDF ou DOCX) ou cole o texto
+    4. **Receba uma análise básica** dos pontos que merecem atenção
+    5. **Para uma análise detalhada**, solicite nosso relatório completo
     """)
     
     st.markdown("""
@@ -477,26 +594,10 @@ def show_welcome():
     st.markdown("### 👤 Qual é o seu papel no contrato?")
     
     roles = [
-        {
-            "title": "Consumidor",
-            "description": "Analisa contratos de compra, serviços ou assinaturas",
-            "icon": "🛒"
-        },
-        {
-            "title": "Prestador de Serviços",
-            "description": "Analisa contratos de trabalho autônomo ou freelancer",
-            "icon": "👨‍💻"
-        },
-        {
-            "title": "Locatário",
-            "description": "Analisa contratos de aluguel ou arrendamento",
-            "icon": "🏠"
-        },
-        {
-            "title": "Empresário",
-            "description": "Analisa contratos comerciais ou de prestação de serviços",
-            "icon": "👔"
-        }
+        {"title": "Consumidor", "description": "Analisa contratos de compra, serviços ou assinaturas", "icon": "🛒"},
+        {"title": "Prestador de Serviços", "description": "Analisa contratos de trabalho autônomo ou freelancer", "icon": "👨‍💻"},
+        {"title": "Locatário", "description": "Analisa contratos de aluguel ou arrendamento", "icon": "🏠"},
+        {"title": "Empresário", "description": "Analisa contratos comerciais ou de prestação de serviços", "icon": "👔"}
     ]
     
     cols = st.columns(2)
@@ -509,11 +610,17 @@ def show_welcome():
                 use_container_width=True
             ):
                 st.session_state.user_role = role['title']
+                st.session_state.show_user_form = True
                 st.session_state.show_analysis = True
                 st.rerun()
 
 def show_analysis_interface():
     """Mostra a interface de análise do contrato"""
+    if st.session_state.get('show_user_form', True):
+        if show_user_info_form():
+            st.rerun()
+        return
+    
     st.markdown(f"""
     <div style="text-align: center; margin-bottom: 2rem;">
         <h1>Análise Contratual</h1>
@@ -602,10 +709,36 @@ def show_results(results: List[Dict]):
             <li>Modelos de contestação prontos para usar</li>
             <li>Orientações sobre próximos passos</li>
         </ul>
-        <button class="btn-primary">Quero receber a análise completa</button>
         <p style="font-size: 0.8rem; margin-top: 0.5rem;">Pagamento via PIX • Entrega em até 24h</p>
     </div>
     """, unsafe_allow_html=True)
+    
+    if st.button("📩 Solicitar análise premium", type="primary", use_container_width=True):
+        st.session_state.show_premium_form = True
+        st.rerun()
+    
+    if st.session_state.get('show_premium_form', False):
+        with st.form("premium_analysis"):
+            st.markdown("### 📝 Detalhes para análise premium")
+            obs = st.text_area("Alguma observação ou dúvida específica?")
+            aceito = st.checkbox("Confirmo que concordo com os termos e condições")
+            
+            if st.form_submit_button("Enviar solicitação"):
+                if not aceito:
+                    st.error("Por favor, aceite os termos e condições")
+                else:
+                    user_data = {
+                        **st.session_state.user_info,
+                        "solicitou_premium": True,
+                        "observacoes_premium": obs,
+                        "data_solicitacao": str(datetime.now())
+                    }
+                    if save_to_google_sheets(user_data):
+                        st.success("Solicitação enviada com sucesso! Entraremos em contato em breve.")
+                    else:
+                        st.warning("Solicitação registrada localmente. Entraremos em contato em breve.")
+                    st.session_state.show_premium_form = False
+                    st.rerun()
     
     st.markdown("### 🔍 Pontos Analisados")
     for item in results:
@@ -634,6 +767,12 @@ def initialize_session_state():
         st.session_state.user_role = None
     if "analysis_results" not in st.session_state:
         st.session_state.analysis_results = None
+    if "user_info" not in st.session_state:
+        st.session_state.user_info = None
+    if "show_user_form" not in st.session_state:
+        st.session_state.show_user_form = False
+    if "show_premium_form" not in st.session_state:
+        st.session_state.show_premium_form = False
 
 def main():
     """Função principal da aplicação"""
