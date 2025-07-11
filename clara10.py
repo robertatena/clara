@@ -160,6 +160,19 @@ def load_css():
         }
     </style>
     """, unsafe_allow_html=True)
+    def check_dependencies():
+    """Verifica se todas as dependências estão instaladas."""
+    try:
+        import docx
+        import PyPDF2
+        import plotly
+        import gspread
+        import google.auth
+        return True
+    except ImportError as e:
+        st.error(f"Falha ao importar dependências necessárias: {str(e)}")
+        st.info("Instale os pacotes com: pip install -r requirements.txt")
+        return False
 
 # ========== REGRAS DE ANÁLISE ==========
 def get_contract_rules() -> Dict[str, List[Dict]]:
