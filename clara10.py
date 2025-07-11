@@ -160,7 +160,8 @@ def load_css():
         }
     </style>
     """, unsafe_allow_html=True)
-   def check_dependencies():
+
+def check_dependencies():
     """Verifica se todas as dependências estão instaladas."""
     try:
         import docx
@@ -635,13 +636,14 @@ def initialize_session_state():
         st.session_state.analysis_results = None
 
 def main():
+    """Função principal da aplicação"""
     setup_page_config()
     load_css()
     initialize_session_state()
-
-    if not check_dependencies():  # Verifica as dependências
-        st.stop()  # Para a execução se algo estiver faltando
-
+    
+    if not check_dependencies():
+        st.stop()
+    
     if not st.session_state.show_analysis:
         show_welcome()
     else:
