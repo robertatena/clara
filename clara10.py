@@ -160,7 +160,7 @@ def load_css():
         }
     </style>
     """, unsafe_allow_html=True)
-    def check_dependencies():
+   def check_dependencies():
     """Verifica se todas as dependências estão instaladas."""
     try:
         import docx
