@@ -35,6 +35,8 @@ requests-oauthlib>=1.3.1
 pyasn1>=0.5.0
 oauthlib>=3.2.2
 
+openpyxl==<versão>
+
 # Utilitários
 beautifulsoup4>=4.12.0
 html5lib>=1.1
