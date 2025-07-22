@@ -1,5 +1,6 @@
-# -*- coding: utf-8 -*-
-"""
+git add requirements.txt runtime.txt
+git commit -m "Fix package versions"
+git push
 ================================================================
 CLARA - ANÁLISE CONTRATUAL INTELIGENTE (v2.1)
 Arquivo completo com 1250+ linhas organizadas e otimizadas
