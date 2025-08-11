@@ -409,7 +409,8 @@ class TextPreprocessor:
         try:
             X = vectorizer.fit_transform(sentences)
             scores = X.sum(axis=1)
-            ranked = sorted(((scores[i], i) for i in range(len(sentences)), reverse=True)
+            # Ordena as sentenças com base nos scores de forma decrescente
+            ranked = sorted(((scores[i], i) for i in range(len(sentences))), reverse=True)
             return [sentences[i] for (score, i) in ranked[:n]]
         except:
             return sentences[:n]
